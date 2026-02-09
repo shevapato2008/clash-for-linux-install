@@ -93,3 +93,61 @@ The installer detects via `/proc/1/exe` and container signals:
 ## CLI Commands (after installation)
 
 `clashon`, `clashoff`, `clashstatus`, `clashui`, `clashsub`, `clashmixin`, `clashsecret`, `clashtun`, `clashupgrade`, `clashlog`
+
+## Remote Deployment (Ethernet-only Device)
+
+When deploying on a device (e.g. RK3588) connected to a MacBook via Ethernet without direct internet:
+
+### 1. MacBook Internet Sharing
+
+```bash
+# Enable IP forwarding
+sudo sysctl -w net.inet.ip.forwarding=1
+
+# Enable NAT (en0 = MacBook Wi-Fi interface)
+echo "nat on en0 from 10.0.0.0/24 to any -> (en0)" | sudo pfctl -ef -
+```
+
+On the remote device, configure gateway and DNS:
+
+```bash
+sudo ip route add default via 10.0.0.1 dev eth0
+echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+```
+
+### 2. Subscription Update (if device can't download directly)
+
+Download on MacBook and transfer:
+
+```bash
+curl -o /tmp/clash_config.yaml "<subscription_url>"
+scp /tmp/clash_config.yaml fan@10.0.0.2:/userdata/fan/clashctl/resources/config.yaml
+```
+
+Then restart on the device: `clashoff && clashon`
+
+### 3. API Operations
+
+The API port and secret are in `runtime.yaml`, not necessarily the default `9090`:
+
+```bash
+# Find actual port and secret
+grep 'external-controller' ~/clashctl/resources/runtime.yaml
+clashsecret
+
+# List proxy nodes
+curl -s -H "Authorization: Bearer <secret>" http://127.0.0.1:<port>/proxies | ~/clashctl/bin/yq '.proxies | keys' -P
+
+# Switch proxy group node
+curl -X PUT -H "Authorization: Bearer <secret>" -H "Content-Type: application/json" \
+  http://127.0.0.1:<port>/proxies/主代理 \
+  -d '{"name": "JP自动选择"}'
+
+# Verify exit country
+curl -s https://ipinfo.io/country
+```
+
+### Notes
+- Anthropic supported countries: US, JP, GB, KR, DE, FR, AU, etc. Full list at https://anthropic.com/supported-countries
+- JP nodes typically have lower latency than US from East Asia
+- `yq` is installed at `~/clashctl/bin/yq`, not in system PATH
